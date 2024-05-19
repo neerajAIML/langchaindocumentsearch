@@ -1,36 +1,42 @@
 import streamlit as st
 import os
-from PyPDF2 import PdfReader
+from pptx import Presentation
 from streamlit_extras.add_vertical_space import add_vertical_space
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
+from langchain.embeddings import AzureOpenAIEmbeddings
 from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
+from langchain.llms import AzureOpenAI
 from langchain.chains.question_answering import load_qa_chain
 from langchain.callbacks import get_openai_callback
 from dotenv import load_dotenv
 import pickle
 
-os.environ["OPENAI_API_KEY"] = ""
-os.environ["OPENAI_API_BASE"] = ""
-
 load_dotenv()
 
+os.environ["AZURE_OPENAI_API_KEY"] = "your-azure-openai-api-key"
+os.environ["AZURE_OPENAI_API_BASE"] = "your-azure-openai-api-base"
+os.environ["AZURE_OPENAI_API_VERSION"] = "your-azure-openai-api-version"
+os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = "your-deployment-name"
+
+def extract_text_from_pptx(file_path):
+    prs = Presentation(file_path)
+    text = ""
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text += shape.text + "\n"
+    return text
+
 def my_function():
-    # Add your function logic here
     st.write("Function called!")
     vector_list = []
     folder_path = '/home/ai/project/Langchain-Document-Chat/data'
     for root, dirs, filenames in os.walk(folder_path):
         text = ""
         for file in filenames:
-            
             fileL = os.path.join(root, file)
             print(fileL)
-            pdf_reader = PdfReader(fileL)
-            
-            for page in pdf_reader.pages:
-                text += page.extract_text()
+            text += extract_text_from_pptx(fileL)
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -38,7 +44,7 @@ def my_function():
             length_function=len
         )
         chunks = text_splitter.split_text(text=text)
-        embeddings = OpenAIEmbeddings()
+        embeddings = AzureOpenAIEmbeddings(deployment_name=os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"])
         print(chunks)
         VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
         vector_list.append(VectorStore)
@@ -48,25 +54,14 @@ def my_function():
         with open(vector_store_path, 'wb') as file:
                 pickle.dump(VectorStore, file)
                 print('wow')   
-    print("Success fully done")
-            
-    
-    
+    print("Successfully done")
 
 def main():
-    
     st.header("Private Chat Window - You can ask any query 💬")
-    # upload a PDF file
-    pdf = st.file_uploader("Upload your PDF", type="pdf")
-    # Button to trigger the function
-    
+    pptx = st.file_uploader("Upload your PPTX", type="pptx")
 
-    if pdf is not None:
-        pdf_reader = PdfReader(pdf)
-
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+    if pptx is not None:
+        text = extract_text_from_pptx(pptx)
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -75,57 +70,43 @@ def main():
         )
         chunks = text_splitter.split_text(text=text)
     
-        store_name = pdf.name[:-4]+".pickle"
+        store_name = pptx.name[:-5] + ".pickle"
         vector_store_path = os.path.join('vector_store', store_name)
     else:
         store_name = "master.pickle"
         vector_store_path = os.path.join('vector_store', store_name) 
-        
 
-    if os.path.exists(vector_store_path):  # Check if vector store file exists
-        print("I ready i had")
+    if os.path.exists(vector_store_path):
+        print("I already have it")
         with open(vector_store_path, 'rb') as file:
             VectorStore = pickle.load(file)
             print(VectorStore)
             print(type(VectorStore))
-
     else:
-        embeddings = OpenAIEmbeddings()
+        embeddings = AzureOpenAIEmbeddings(deployment_name=os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"])
         VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
         with open(vector_store_path, 'wb') as file:
-            pickle.dump(VectorStore, file)  # Save the created vector store
+            pickle.dump(VectorStore, file)
 
-
-    # Display chat history
     chat_history = st.session_state.get("chat_history", [])
 
-    # Accept user questions/query
-    query = st.text_input("Ask questions about your PDF file")
+    query = st.text_input("Ask questions about your PPTX file")
 
     if query:
         docs = VectorStore.similarity_search(query=query, k=3)
-        llm = OpenAI(model_name='gpt-3.5-turbo')
+        llm = AzureOpenAI(deployment_name=os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"], model_name='gpt-3.5-turbo')
         chain = load_qa_chain(llm=llm, chain_type='stuff')
         with get_openai_callback() as cb:
             response = chain.run(input_documents=docs, question=query)
-            chat_history.append({"user": query, "bot": response})
+            response_with_citations = f"{response}\n\nCitations:\n" + "\n".join([doc.metadata['source'] for doc in docs])
+            chat_history.append({"user": query, "bot": response_with_citations})
 
         st.session_state.chat_history = chat_history
 
-        # Display chat history
         for i, message in enumerate(chat_history):
             with st.chat_message("user" if i % 2 == 0 else "assistant"):
                 st.markdown(f"**{message['user']}**")
                 st.markdown(message['bot'])
 
-        # Display the latest bot response
-        # st.write("Bot Response:", response)
-
-
 if __name__ == "__main__":
-    
-    # if st.button("You want to chat with uploaded files"):
-    #     my_function()
-    # if st.button("You want to upload files to chat"):
-    #my_function()
     main()
