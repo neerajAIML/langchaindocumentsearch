@@ -11,8 +11,8 @@ from langchain.callbacks import get_openai_callback
 from dotenv import load_dotenv
 import pickle
 
-os.environ["OPENAI_API_KEY"] = "929b964d-406e-472d-9c76-d99aaf0a5b42:iBVYe0TDeuSRkiV64x9wKuCvOB0rnDlE"
-os.environ["OPENAI_API_BASE"] = "https://openai.prod.ai-gateway.quantumblack.com/ff74be40-4d7c-4d8e-9aca-f119f2536639/v1"
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["OPENAI_API_BASE"] = ""
 
 load_dotenv()
 
